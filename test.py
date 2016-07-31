@@ -1,9 +1,10 @@
 import boto3
+from subprocess import call
 
 client = boto3.client('ecs')
 
-cluster_name = '#############'
-hosted_zone = '###########'
+cluster_name = '###############
+hosted_zone = '###############'
 
 def get_tasks_for_cluster(cluster_name):
     tasks = []
@@ -43,46 +44,8 @@ def get_task_name(cluster_name, task):
         if container['networkBindings']:
             return container['name']
 
-'''
-Format:
-    [priority] [weight] [port] [server host name]
-Example:
-    1 10 5269 xmpp-server.example.com.
-    2 12 5060 sip-server.example.com.
-'''
-
 def generate_srv_record(host_ip, host_port, name, hosted_zone):
-    client = boto3.client('route53')
-    print 'Setting DNS'
-    print 'SRV entry: %s' % name
-    print 'Host IP: %s' % host_ip
-    print 'Host Port: %s' % host_port
-    resourceRecordValue = str('1 10 %s %s' % (host_port, name + '.domain.com.'))
-    print resourceRecordValue
-    print type(resourceRecordValue)
-    response = client.change_resource_record_sets(
-        HostedZoneId=hosted_zone,
-        ChangeBatch={
-            'Comment': 'SRV recrod for' + name,
-            'Changes': [
-                {
-                    'Action': 'UPSERT',
-                    'ResourceRecordSet': {
-                        'Name': name + '.domain.com.',
-                        'Weight': 10,
-                        'Type': 'SRV',
-                        'Region': 'us-east-1',
-                        'ResourceRecords': [
-                            {
-                                'Value': resourceRecordValue
-                            },
-                        ]
-                    }
-                },
-            ]
-        }
-    )
-    return response
+    return call("/usr/bin/cli53" + " rrcreate --replace %s '%s 60 SRV 1 10 %s %s.'" % (hosted_zone, name, host_port, host_ip), shell=True)
 
 tasks = get_tasks_for_cluster(cluster_name)
 
@@ -95,5 +58,4 @@ for task in tasks:
     srv_info[task]['instanceId'] = get_instance_id_from_container_instance(cluster_name, srv_info[task]['containerInstance'])
     srv_info[task]['ipAddress'] = get_instance_ip_from_instance_id(srv_info[task]['instanceId'])
     srv_info[task]['name']  = get_task_name(cluster_name, task)
-    print srv_info
-    print generate_srv_record(srv_info[task]['ipAddress'], srv_info[task]['hostPort'], srv_info[task]['name'], hosted_zone)
+    generate_srv_record(srv_info[task]['ipAddress'], srv_info[task]['hostPort'], srv_info[task]['name'], hosted_zone)
