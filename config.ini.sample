@@ -1,0 +1,3 @@
+[default]
+cluster_name: test-ecs-cluster-name
+domain_name: domain.com.

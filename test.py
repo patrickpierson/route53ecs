@@ -1,10 +1,17 @@
-import boto3
-from subprocess import call
+#!/usr/bin/python
+# TODO:   File "test.py", line 56, in generate_srv_record
+#         name_record = name + '.srv.' + domain_name
+#         TypeError: unsupported operand type(s) for +: 'NoneType' and 'str'
+
+
+import boto3, configparser
 
 client = boto3.client('ecs')
 
-cluster_name = '###############
-hosted_zone = '###############'
+config = configparser.ConfigParser()
+config.read("./config.ini")
+cluster_name = config["default"]['cluster_name']
+domain_name = config["default"]['domain_name']
 
 def get_tasks_for_cluster(cluster_name):
     tasks = []
@@ -44,8 +51,37 @@ def get_task_name(cluster_name, task):
         if container['networkBindings']:
             return container['name']
 
-def generate_srv_record(host_ip, host_port, name, hosted_zone):
-    return call("/usr/bin/cli53" + " rrcreate --replace %s '%s 60 SRV 1 10 %s %s.'" % (hosted_zone, name, host_port, host_ip), shell=True)
+def get_hosted_zone_domain(domain_name):
+    client = boto3.client('route53', region_name='us-east-1')
+    return client.list_hosted_zones_by_name(DNSName=domain_name)['HostedZones'][0]['Id']
+
+def generate_srv_record(host_ip, host_port, name, domain_name):
+    client = boto3.client('route53', region_name='us-east-1')
+    resourceRecordValue = str('1 10 %s %s' % (host_port, host_ip))
+    hosted_zone = get_hosted_zone_domain(domain_name)
+    name_record = name + '.srv.' + domain_name
+    response = client.change_resource_record_sets(
+        HostedZoneId=hosted_zone,
+        ChangeBatch={
+            'Comment': 'Route53ECS entry',
+            'Changes': [
+                {
+                    'Action': 'UPSERT',
+                    'ResourceRecordSet': {
+                        'Name': name_record,
+                        'Type': 'SRV',
+                        'TTL': 60,
+                        'ResourceRecords': [
+                            {
+                                'Value': resourceRecordValue
+                            },
+                        ],
+                    }
+                },
+            ]
+        }
+    )
+    return response
 
 tasks = get_tasks_for_cluster(cluster_name)
 
@@ -58,4 +94,4 @@ for task in tasks:
     srv_info[task]['instanceId'] = get_instance_id_from_container_instance(cluster_name, srv_info[task]['containerInstance'])
     srv_info[task]['ipAddress'] = get_instance_ip_from_instance_id(srv_info[task]['instanceId'])
     srv_info[task]['name']  = get_task_name(cluster_name, task)
-    generate_srv_record(srv_info[task]['ipAddress'], srv_info[task]['hostPort'], srv_info[task]['name'], hosted_zone)
+    generate_srv_record(srv_info[task]['ipAddress'], srv_info[task]['hostPort'], srv_info[task]['name'], domain_name)
